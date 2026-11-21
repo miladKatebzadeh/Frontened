@@ -6,9 +6,9 @@ pipeline {
     }
 
     environment {
-        APP_NAME = 'frontendapp'
+        APP_NAME = 'my-nextjs-app'
         HOST_PORT = '8080'
-        CONTAINER_PORT = '80' // برای بک‌اند معمولاً 3000 است
+        CONTAINER_PORT = '3000'
     }
 
     stages {
