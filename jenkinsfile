@@ -6,7 +6,7 @@ pipeline {
     }
 
     environment {
-        APP_NAME = 'FrontendApp'
+        APP_NAME = 'frontendapp'
         HOST_PORT = '8080'
         CONTAINER_PORT = '80' // برای بک‌اند معمولاً 3000 است
     }
@@ -43,5 +43,6 @@ pipeline {
                 """
             }
         }
+        
     }
 }
