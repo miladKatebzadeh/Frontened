@@ -3,7 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'OpsHub — AIOps Control Plane',
+  title: 'Revive — AIOps Control Plane',
   description: 'Premium observability, semantic retrieval, and dynamic MCP tooling for DevOps teams.',
   generator: 'v0.app',
   icons: {

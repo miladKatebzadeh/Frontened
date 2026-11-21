@@ -353,7 +353,7 @@ function KnowledgeView() {
           <div>
             <div className="eyebrow">VECTOR DATABASE CLUSTER</div>
             <h2>ChromaDB knowledge base</h2>
-            <p>Semantic memory layer for DevOps-Brain</p>
+            <p>Semantic memory layer for Revive</p>
           </div>
         </div>
         <div className="connection" style={{ borderColor: chromaStatus === 'connected' ? '#2a4733' : '#a4a2a2', background: chromaStatus === 'connected' ? '#ffffff' : '#ffffff' }}>
@@ -574,7 +574,7 @@ function LabView() {
     setMessages(updatedMessages)
     setQuery('')
     setAiLoading(true)
-    notify('DevOps-Brain is parsing cluster metadata infrastructure...')
+    notify('Revive is parsing cluster metadata infrastructure...')
     try {
       const res = await apiRequest<{ reply: string; engine_status?: string; router?: string; laya_model?: string }>('/mcp/chat/', {
         method: 'POST',
@@ -605,7 +605,7 @@ function LabView() {
         <PanelHeader eyebrow="NATURAL LANGUAGE OPS" title="AI Diagnostic Console" icon={MessageSquare} action={<span className="online"><StatusDot /> ONLINE</span>} />
         <div className="chat-toolbar">
           <div className="bot-avatar"><Sparkles size={20} /></div>
-          <div><strong>DevOps-Brain</strong><span>Context: telemetry + ChromaDB + MCP runtime</span></div>
+          <div><strong>Revive</strong><span>Context: telemetry + ChromaDB + MCP runtime</span></div>
           <span className="secure-badge">SAFE MODE</span>
         </div>
 
@@ -690,7 +690,7 @@ function LabView() {
 
         <div className="ask-bar">
           <Search size={16} />
-          <input aria-label="Ask DevOps-Brain" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) sendMessage() }} placeholder="Ask about your infrastructure..." />
+          <input aria-label="Ask Revive" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) sendMessage() }} placeholder="Ask about your infrastructure..." />
           <button onClick={sendMessage} aria-label="Send message" disabled={aiLoading}><ArrowUpRight size={16} /></button>
         </div>
         <div className="console-footer"><span><CheckCircle2 size={13} /> Responses are grounded in connected sources</span><span>Enter to send · Shift+Enter for newline</span></div>
@@ -830,7 +830,7 @@ export default function Page() {
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark"><span /><span /><span /></div>
-          <div><strong>OPS<span>HUB</span></strong><small>AI OBSERVABILITY PLATFORM</small></div>
+          <div><strong>RE<span>VIVE</span></strong><small>AI OBSERVABILITY PLATFORM</small></div>
         </div>
         <div className="top-actions">
           <span className="system-status"><StatusDot tone={telemetryError ? 'red' : 'green'} /> {telemetryError ? 'SYSTEM DEGRADED' : 'ALL SYSTEMS NOMINAL'}</span>

@@ -168,7 +168,7 @@ export default function SettingsPage() {
             <header className="topbar" style={{ flexShrink: 0 }}>
                 <div className="brand">
                     <div className="brand-mark"><span /><span /><span /></div>
-                    <div><strong>OPS<span>HUB</span></strong><small>SETTINGS</small></div>
+                    <div><strong>RE<span>VIVE</span></strong><small>SETTINGS</small></div>
                 </div>
                 <div className="top-actions">
                     <button onClick={() => window.location.href = '/'} className="refresh-button" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
