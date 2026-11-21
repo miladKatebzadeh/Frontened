@@ -1,0 +1,65 @@
+pipeline {
+    agent any
+
+    environment{
+        VENV=".venv"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                npm install
+                '''
+            }
+        }
+       
+        stage('Build Docker Image') {
+            
+            steps {
+                sh '''
+                docker build --no-cache -t  OPSHUBfrontened:${BUILD_NUMBER} .
+                '''
+            }
+
+        }
+        stage('deploy Application') {
+            steps {
+                sh '''
+                docker rm -f OPSHUBfrontened || true
+                docker run -d --network my_configs_devops --name OPSHUBfrontened -p 5001:5000 color-dot:${BUILD_NUMBER}
+                '''
+            }
+        }
+
+        stage('Health Check') { 
+            steps {
+                sh '''
+                sleep 5
+                curl --fail http://color-dot:5000
+
+                '''
+            }
+        }
+
+    }
+
+    post {
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+
+        failure {
+            echo 'Pipeline failed!'
+        }
+    }
+   
+
+}
