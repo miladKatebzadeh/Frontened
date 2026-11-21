@@ -1,13 +1,5 @@
-FROM python:3.12-slim
-
-WORKDIR /app
-
-COPY requirements.txt .
-
-RUN pip install --no-cache-dir -r requirements.txt  
-
-COPY . .
-
-EXPOSE 8000
-
-CMD ["python", "manage.py", "runserver", "8000"]
+FROM nginx:alpine
+# پوشه build یا dist را به مسیر پیش‌فرض nginx کپی می‌کنیم
+COPY dist/ /usr/share/nginx/html/
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
