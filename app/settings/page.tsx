@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Activity, ArrowLeft, Database, Sparkles } from 'lucide-react'
 
 type Section = 'ollama' | 'telemetry' | 'knowledge'
-type Service = 'ollama' | 'prometheus' | 'jenkins' | 'chroma'
+type Service = 'ollama' | 'prometheus' | 'jenkins' | 'chroma' | 'docker'
 type Probe = { status: 'connected' | 'offline' | 'invalid'; latency_ms?: number; message?: string; models?: string[] }
 
 const sections = [
@@ -50,6 +50,7 @@ export default function SettingsPage() {
     const [jenkinsUrl, setJenkinsUrl] = useState('http://127.0.0.1:8080')
     const [jenkinsUser, setJenkinsUser] = useState('')
     const [jenkinsToken, setJenkinsToken] = useState('')
+    const [dockerHost, setDockerHost] = useState('')
     const [tokenIsSet, setTokenIsSet] = useState(false)
     const [scrapeInterval, setScrapeInterval] = useState('15')
     const [autoRemediate, setAutoRemediate] = useState(false)
@@ -67,6 +68,7 @@ export default function SettingsPage() {
                 if (settings.ollama_model) setOllamaModel(settings.ollama_model)
                 if (settings.prometheus_url) setPrometheusUrl(settings.prometheus_url)
                 if (settings.jenkins_url) setJenkinsUrl(settings.jenkins_url)
+                if (settings.docker_host) setDockerHost(settings.docker_host)
                 setJenkinsUser(settings.jenkins_user || '')
                 if (settings.scrape_interval) setScrapeInterval(String(settings.scrape_interval))
                 if (settings.chroma_host) setChromaHost(settings.chroma_host)
@@ -89,6 +91,8 @@ export default function SettingsPage() {
             payload.jenkins_url = jenkinsUrl
             payload.jenkins_user = jenkinsUser
             if (jenkinsToken) payload.jenkins_token = jenkinsToken
+        } else if (service === 'docker') {
+            payload.docker_host = dockerHost
         } else {
             payload.chroma_host = chromaHost
             payload.chroma_port = chromaPort
@@ -220,6 +224,11 @@ export default function SettingsPage() {
 
                     {section === 'telemetry' && (
                         <div className="field-grid" style={{ gridTemplateColumns: '1fr', padding: '20px 18px' }}>
+                            <Field label="Docker API" error={errors.docker_host} help="Engine API of any host. Example: http://127.0.0.1:2375. Leave blank to skip collection.">
+                                <input value={dockerHost} onChange={(event) => setDockerHost(event.target.value)} placeholder="http://127.0.0.1:2375" />
+                            </Field>
+                            {probeLine('docker')}
+                            <button className="refresh-button" type="button" onClick={() => probe('docker')} disabled={probing !== null}>Test Docker</button>
                             <Field label="Prometheus URL" error={errors.prometheus_url} help="Example: http://10.0.0.5:9090">
                                 <input value={prometheusUrl} onChange={(event) => setPrometheusUrl(event.target.value)} placeholder="http://127.0.0.1:9090" />
                             </Field>
@@ -240,6 +249,7 @@ export default function SettingsPage() {
                                 <input type="number" min={5} max={3600} value={scrapeInterval} onChange={(event) => setScrapeInterval(event.target.value)} />
                             </Field>
                             <button className="compile-button" type="button" disabled={saving} onClick={() => save({
+                                docker_host: dockerHost,
                                 prometheus_url: prometheusUrl,
                                 jenkins_url: jenkinsUrl,
                                 jenkins_user: jenkinsUser,
