@@ -1169,7 +1169,7 @@ export default function Page() {
           <div><strong>RE<span>VIVE</span></strong><small>AI OBSERVABILITY PLATFORM</small></div>
         </div>
         <div className="top-actions">
-          <span className="system-status"><StatusDot tone={telemetryError ? 'red' : 'green'} /> {telemetryError ? 'SYSTEM DEGRADED' : 'ALL SYSTEMS NOMINAL'}</span>
+          <span className="system-status"><StatusDot tone={telemetryError ? 'red' : 'green'} /> {telemetryError ? 'TELEMETRY DEGRADED' : 'TELEMETRY CONNECTED'}</span>
 
           {/* 🌟 دکمه چرخ‌دنده بالا صفحه اکنون زنده و اکتیو شد */}
           {/* 🌟 اصلاح و زنده کردن دکمه چرخ‌دنده هدر بالا صفحه در page.tsx */}
@@ -1209,7 +1209,7 @@ export default function Page() {
           return (
             <button key={tab.id} className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>
               <Icon size={15} />{tab.label}
-              <span>{tab.id === 'analytics' ? '01' : tab.id === 'knowledge' ? '02' : '03'}</span>
+              <span>{tab.id === 'analytics' ? '01' : tab.id === 'incidents' ? '02' : tab.id === 'knowledge' ? '03' : '04'}</span>
             </button>
           )
         })}
