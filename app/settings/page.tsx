@@ -1,16 +1,17 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Activity, ArrowLeft, Database, Sparkles } from 'lucide-react'
+import { Activity, ArrowLeft, Database, Radio, Sparkles } from 'lucide-react'
 
-type Section = 'ollama' | 'telemetry' | 'knowledge'
-type Service = 'ollama' | 'prometheus' | 'jenkins' | 'chroma' | 'docker'
+type Section = 'ollama' | 'telemetry' | 'knowledge' | 'langfuse'
+type Service = 'ollama' | 'prometheus' | 'jenkins' | 'chroma' | 'docker' | 'langfuse' | 'langfuse_trace'
 type Probe = { status: 'connected' | 'offline' | 'invalid'; latency_ms?: number; message?: string; models?: string[] }
 
 const sections = [
     { id: 'ollama', label: 'Ollama', icon: Sparkles },
     { id: 'telemetry', label: 'Telemetry', icon: Activity },
     { id: 'knowledge', label: 'ChromaDB', icon: Database },
+    { id: 'langfuse', label: 'Langfuse', icon: Radio },
 ] as const
 
 function apiBase() {
@@ -58,6 +59,10 @@ export default function SettingsPage() {
     const [chromaPort, setChromaPort] = useState('8001')
     const [embeddingEngine, setEmbeddingEngine] = useState('all-MiniLM-L6-v2')
     const [confirmReindex, setConfirmReindex] = useState(false)
+    const [langfuseUrl, setLangfuseUrl] = useState('http://127.0.0.1:3030')
+    const [langfusePublicKey, setLangfusePublicKey] = useState('')
+    const [langfuseSecret, setLangfuseSecret] = useState('')
+    const [langfuseSecretSet, setLangfuseSecretSet] = useState(false)
 
     useEffect(() => {
         fetch(`${apiBase()}/mcp/settings/`, { headers: apiHeaders() })
@@ -76,6 +81,9 @@ export default function SettingsPage() {
                 if (settings.embedding_engine) setEmbeddingEngine(settings.embedding_engine)
                 setAutoRemediate(settings.auto_remediate === '1' || settings.auto_remediate === 'true')
                 setTokenIsSet(Boolean(settings.jenkins_token_set))
+                if (settings.langfuse_base_url) setLangfuseUrl(settings.langfuse_base_url)
+                setLangfusePublicKey(settings.langfuse_public_key || '')
+                setLangfuseSecretSet(Boolean(settings.langfuse_secret_set))
             })
             .catch(() => undefined)
     }, [])
@@ -93,6 +101,10 @@ export default function SettingsPage() {
             if (jenkinsToken) payload.jenkins_token = jenkinsToken
         } else if (service === 'docker') {
             payload.docker_host = dockerHost
+        } else if (service === 'langfuse' || service === 'langfuse_trace') {
+            payload.langfuse_base_url = langfuseUrl
+            payload.langfuse_public_key = langfusePublicKey
+            if (langfuseSecret) payload.langfuse_secret_key = langfuseSecret
         } else {
             payload.chroma_host = chromaHost
             payload.chroma_port = chromaPort
@@ -138,6 +150,10 @@ export default function SettingsPage() {
                 setTokenIsSet(true)
                 setJenkinsToken('')
             }
+            if (typeof payload.langfuse_secret_key === 'string' && payload.langfuse_secret_key) {
+                setLangfuseSecretSet(true)
+                setLangfuseSecret('')
+            }
             const nextCycle = Array.isArray(data.notes) && data.notes.some((note: string) => note.includes('next collector cycle'))
             const reindex = data.reindex
             if (reindex && reindex.reindexed) setNotice(`Saved. Reindexed ${reindex.count} documents.`)
@@ -157,7 +173,7 @@ export default function SettingsPage() {
         if (!result) return null
         const label = result.status === 'connected'
             ? `Connected${typeof result.latency_ms === 'number' ? `, ${result.latency_ms}ms` : ''}`
-            : result.status === 'invalid' ? 'Invalid address' : 'Offline'
+            : result.status === 'invalid' ? 'Not accepted' : 'Offline'
         return <small className={`settings-probe ${result.status}`}>{label}{result.message ? ` — ${result.message}` : ''}</small>
     }
 
@@ -296,6 +312,33 @@ export default function SettingsPage() {
                                 ...(confirmReindex ? { confirm_reindex: '1' } : {}),
                             })}>
                                 {saving ? 'Saving…' : 'Save knowledge'}
+                            </button>
+                        </div>
+                    )}
+
+                    {section === 'langfuse' && (
+                        <div className="field-grid" style={{ gridTemplateColumns: '1fr', padding: '20px 18px' }}>
+                            <Field label="Langfuse URL" error={errors.langfuse_base_url} help="Address the backend can reach. Inside Docker, 127.0.0.1 is the container itself, not the host.">
+                                <input value={langfuseUrl} onChange={(event) => setLangfuseUrl(event.target.value)} placeholder="http://10.0.0.8:3030" />
+                            </Field>
+                            <Field label="Public key" error={errors.langfuse_public_key}>
+                                <input value={langfusePublicKey} onChange={(event) => setLangfusePublicKey(event.target.value)} placeholder="pk-lf-..." autoComplete="off" />
+                            </Field>
+                            <Field label="Secret key" error={errors.langfuse_secret_key} help={langfuseSecretSet ? 'A secret is saved. Leave this blank to keep it.' : 'Secret key for this Langfuse project.'}>
+                                <input type="password" value={langfuseSecret} onChange={(event) => setLangfuseSecret(event.target.value)} placeholder={langfuseSecretSet ? '••••••••' : 'sk-lf-...'} autoComplete="new-password" />
+                            </Field>
+                            {probeLine('langfuse')}
+                            {probeLine('langfuse_trace')}
+                            <div className="settings-action-row">
+                                <button className="refresh-button" type="button" onClick={() => probe('langfuse')} disabled={probing !== null}>Test access</button>
+                                <button className="refresh-button" type="button" onClick={() => probe('langfuse_trace')} disabled={probing !== null}>Send sample trace</button>
+                            </div>
+                            <button className="compile-button" type="button" disabled={saving} onClick={() => save({
+                                langfuse_base_url: langfuseUrl,
+                                langfuse_public_key: langfusePublicKey,
+                                langfuse_secret_key: langfuseSecret,
+                            })}>
+                                {saving ? 'Saving…' : 'Save Langfuse'}
                             </button>
                         </div>
                     )}
