@@ -27,10 +27,11 @@ async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
   }
   return response.status === 204 ? (undefined as T) : response.json()
 }
-import { Activity, ArrowUpRight, Bot, CheckCircle2, CircleDot, Code2, Cpu, Database, FileCode2, Gauge, Layers3, MessageSquare, Network, Play, Search, Server, Settings2, Sparkles, Terminal, Trash2, Upload, Wifi, XCircle, Zap } from 'lucide-react'
+import { Activity, AlertTriangle, ArrowUpRight, Bot, CheckCircle2, CircleDot, ClipboardList, Clock3, Code2, Cpu, Database, FileCode2, Gauge, Layers3, MessageSquare, Network, Play, Search, Server, Settings2, Sparkles, Terminal, Trash2, Upload, Wifi, XCircle, Zap } from 'lucide-react'
 
 const tabs = [
   { id: 'analytics', label: 'Live Infrastructure', icon: Activity },
+  { id: 'incidents', label: 'Incident Management', icon: AlertTriangle },
   { id: 'knowledge', label: 'ChromaDB Knowledge', icon: Database },
   { id: 'lab', label: 'Hybrid AI & MCP Lab', icon: Bot },
 ] as const
@@ -219,6 +220,340 @@ function AnalyticsView({
   )
 }
 
+
+
+type IncidentStatus = 'open' | 'acknowledged' | 'investigating' | 'resolved';
+type IncidentSeverity = 'critical' | 'high' | 'medium' | 'low';
+type IncidentRecord = {
+  id: number;
+  fingerprint: string;
+  source: string;
+  resource: string;
+  title: string;
+  description: string;
+  severity: IncidentSeverity;
+  status: IncidentStatus;
+  first_seen: string;
+  last_seen: string;
+  resolved_at: string | null;
+  occurrence_count: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  events?: IncidentEvent[];
+};
+type IncidentEvent = {
+  id: number;
+  event_type: string;
+  actor: string;
+  message: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+type IncidentSummary = {
+  open: number;
+  acknowledged: number;
+  investigating: number;
+  resolved: number;
+  critical: number;
+};
+type IncidentListResponse = {
+  count: number;
+  summary: IncidentSummary;
+  results: IncidentRecord[];
+};
+
+function formatIncidentDate(value?: string | null) {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function IncidentView({ refreshToken }: { refreshToken: number }) {
+  const [incidents, setIncidents] = useState<IncidentRecord[]>([]);
+  const [summary, setSummary] = useState<IncidentSummary>({
+    open: 0, acknowledged: 0, investigating: 0, resolved: 0, critical: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [statusFilter, setStatusFilter] = useState('active');
+  const [severityFilter, setSeverityFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [detail, setDetail] = useState<IncidentRecord | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionMessage, setActionMessage] = useState('');
+  const [lastUpdated, setLastUpdated] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    let firstLoad = true;
+
+    const loadIncidents = async () => {
+      if (firstLoad) setLoading(true);
+      else setRefreshing(true);
+
+      const params = new URLSearchParams({ limit: '200' });
+      if (statusFilter && statusFilter !== 'active') params.set('status', statusFilter);
+      if (severityFilter) params.set('severity', severityFilter);
+      if (sourceFilter) params.set('source', sourceFilter);
+      if (appliedSearch) params.set('q', appliedSearch);
+
+      try {
+        const response = await apiRequest<IncidentListResponse>(`/incidents/?${params.toString()}`);
+        if (cancelled) return;
+        const rows = Array.isArray(response.results) ? response.results : [];
+        const visibleRows = statusFilter === 'active' ? rows.filter((item) => item.status !== 'resolved') : rows;
+        setIncidents(visibleRows);
+        setSummary(response.summary ?? { open: 0, acknowledged: 0, investigating: 0, resolved: 0, critical: 0 });
+        setError('');
+        setLastUpdated(new Date().toLocaleTimeString());
+        setSelectedId((current) => {
+          if (current && visibleRows.some((item) => item.id === current)) return current;
+          return visibleRows[0]?.id ?? null;
+        });
+      } catch (requestError) {
+        if (!cancelled) setError(requestError instanceof Error ? requestError.message : 'Could not load incidents.');
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+        firstLoad = false;
+      }
+    };
+
+    void loadIncidents();
+    const timer = window.setInterval(() => void loadIncidents(), 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [statusFilter, severityFilter, sourceFilter, appliedSearch, refreshToken]);
+
+  useEffect(() => {
+    if (selectedId === null) {
+      setDetail(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadDetail = async () => {
+      setDetailLoading(true);
+      try {
+        const response = await apiRequest<IncidentRecord>(`/incidents/${selectedId}/`);
+        if (!cancelled) {
+          setDetail(response);
+          setDetailError('');
+        }
+      } catch (requestError) {
+        if (!cancelled) setDetailError(requestError instanceof Error ? requestError.message : 'Could not load incident details.');
+      } finally {
+        if (!cancelled) setDetailLoading(false);
+      }
+    };
+
+    void loadDetail();
+    const timer = window.setInterval(() => void loadDetail(), 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [selectedId, refreshToken]);
+
+  const updateIncidentStatus = async (nextStatus: 'acknowledged' | 'investigating') => {
+    if (!selectedId) return;
+    setActionBusy(true);
+    setActionMessage('');
+    try {
+      const previousStatus = detail?.status;
+      const updated = await apiRequest<IncidentRecord>(`/incidents/${selectedId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      setDetail(updated);
+      setActionMessage(nextStatus === 'acknowledged' ? 'Incident acknowledged.' : 'Investigation started.');
+      setRefreshing(true);
+      setTimeout(() => setRefreshing(false), 500);
+      setIncidents((current) => current.map((item) => item.id === updated.id ? { ...item, ...updated } : item));
+      setSummary((current) => {
+        const next = { ...current };
+        if (previousStatus === 'open') next.open = Math.max(0, next.open - 1);
+        if (previousStatus === 'acknowledged') next.acknowledged = Math.max(0, next.acknowledged - 1);
+        if (previousStatus === 'investigating') next.investigating = Math.max(0, next.investigating - 1);
+        if (updated.status === 'acknowledged') next.acknowledged += 1;
+        if (updated.status === 'investigating') next.investigating += 1;
+        return next;
+      });
+    } catch (requestError) {
+      setActionMessage(requestError instanceof Error ? requestError.message : 'Could not update incident status.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  return (
+    <div className="view-stack incident-view">
+      <div className="incident-summary-grid">
+        <div className="incident-stat">
+          <span>OPEN</span><strong>{summary.open}</strong><small>Awaiting acknowledgement</small>
+        </div>
+        <div className="incident-stat">
+          <span>ACKNOWLEDGED</span><strong>{summary.acknowledged}</strong><small>Seen by an operator</small>
+        </div>
+        <div className="incident-stat">
+          <span>INVESTIGATING</span><strong>{summary.investigating}</strong><small>Under active review</small>
+        </div>
+        <div className="incident-stat incident-stat-critical">
+          <span>ACTIVE CRITICAL</span><strong>{summary.critical}</strong><small>Unresolved critical signals</small>
+        </div>
+      </div>
+
+      <div className="incident-layout">
+        <section className="panel incident-list-panel">
+          <PanelHeader
+            eyebrow="EVENT CORRELATION / LIVE"
+            title="Incident queue"
+            icon={ClipboardList}
+            action={<span className="live-pill"><StatusDot /> AUTO REFRESH · 15S</span>}
+          />
+
+          <div className="incident-toolbar">
+            <label className="incident-search">
+              <Search size={14} />
+              <input
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                onKeyDown={(event) => { if (event.key === 'Enter') setAppliedSearch(searchText.trim()); }}
+                placeholder="Search incidents or resources…"
+              />
+            </label>
+            <button className="refresh-button" type="button" onClick={() => setAppliedSearch(searchText.trim())}>Search</button>
+            <select aria-label="Filter by status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="active">Active incidents</option>
+              <option value="">All statuses</option>
+              <option value="open">Open</option>
+              <option value="acknowledged">Acknowledged</option>
+              <option value="investigating">Investigating</option>
+              <option value="resolved">Resolved</option>
+            </select>
+            <select aria-label="Filter by severity" value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)}>
+              <option value="">All severities</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+            <select aria-label="Filter by source" value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
+              <option value="">All sources</option>
+              <option value="docker">Docker</option>
+              <option value="jenkins">Jenkins</option>
+              <option value="prometheus">Prometheus</option>
+              <option value="alertmanager">Alertmanager</option>
+            </select>
+          </div>
+
+          {error ? (
+            <div className="incident-error"><AlertTriangle size={16} /><div><strong>Incident feed unavailable</strong><span>{error}</span></div></div>
+          ) : loading ? (
+            <div className="empty-state">Loading incident queue…</div>
+          ) : incidents.length === 0 ? (
+            <div className="empty-state">No incidents match the current filters.</div>
+          ) : (
+            <div className="incident-rows">
+              {incidents.map((incident) => (
+                <button
+                  type="button"
+                  key={incident.id}
+                  className={`incident-row ${selectedId === incident.id ? 'selected' : ''}`}
+                  onClick={() => { setSelectedId(incident.id); setActionMessage(''); }}
+                >
+                  <span className={`incident-severity-mark severity-${incident.severity}`} />
+                  <span className="incident-row-main">
+                    <strong>{incident.title}</strong>
+                    <small>{incident.resource} · {incident.source.toUpperCase()} · {incident.occurrence_count} occurrence{incident.occurrence_count === 1 ? '' : 's'}</small>
+                  </span>
+                  <span className={`incident-badge severity-badge-${incident.severity}`}>{incident.severity}</span>
+                  <span className={`incident-status status-badge-${incident.status}`}>{incident.status.replace('_', ' ')}</span>
+                  <small className="incident-last-seen"><Clock3 size={12} />{formatIncidentDate(incident.last_seen)}</small>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="incident-list-footer">
+            <span>{incidents.length} shown · {lastUpdated ? `Updated ${lastUpdated}` : 'Waiting for first sync'}</span>
+            <span>{refreshing ? 'Refreshing…' : 'Polling every 15 seconds'}</span>
+          </div>
+        </section>
+
+        <section className="panel incident-detail-panel">
+          <PanelHeader eyebrow="INCIDENT CONTEXT" title="Investigation details" icon={AlertTriangle} />
+          {detailLoading && !detail ? (
+            <div className="empty-state">Loading incident details…</div>
+          ) : detailError ? (
+            <div className="empty-state incident-detail-error">{detailError}</div>
+          ) : !detail ? (
+            <div className="empty-state">Select an incident to inspect its timeline and status.</div>
+          ) : (
+            <div className="incident-detail-content">
+              <div className="incident-detail-topline">
+                <span className={`incident-badge severity-badge-${detail.severity}`}>{detail.severity}</span>
+                <span className={`incident-status status-badge-${detail.status}`}>{detail.status.replace('_', ' ')}</span>
+              </div>
+              <h3>{detail.title}</h3>
+              <p>{detail.description || 'No additional description was provided by the telemetry source.'}</p>
+              <dl className="incident-facts">
+                <div><dt>Resource</dt><dd>{detail.resource}</dd></div>
+                <div><dt>Source</dt><dd>{detail.source}</dd></div>
+                <div><dt>First seen</dt><dd>{formatIncidentDate(detail.first_seen)}</dd></div>
+                <div><dt>Last seen</dt><dd>{formatIncidentDate(detail.last_seen)}</dd></div>
+                <div><dt>Occurrences</dt><dd>{detail.occurrence_count}</dd></div>
+                <div><dt>Fingerprint</dt><dd title={detail.fingerprint}>{detail.fingerprint.slice(0, 12)}…</dd></div>
+              </dl>
+
+              <div className="incident-actions">
+                {detail.status === 'open' && (
+                  <button type="button" className="incident-action-button" disabled={actionBusy} onClick={() => updateIncidentStatus('acknowledged')}>
+                    <CheckCircle2 size={14} /> Acknowledge
+                  </button>
+                )}
+                {(detail.status === 'open' || detail.status === 'acknowledged') && (
+                  <button type="button" className="incident-action-button primary" disabled={actionBusy} onClick={() => updateIncidentStatus('investigating')}>
+                    <Activity size={14} /> Start investigation
+                  </button>
+                )}
+                {detail.status === 'investigating' && <span className="incident-action-note">Investigation is in progress.</span>}
+                {detail.status === 'resolved' && <span className="incident-action-note">Recovered by telemetry.</span>}
+                {actionBusy && <span className="incident-action-note">Updating…</span>}
+              </div>
+              {actionMessage ? <div className="incident-action-message">{actionMessage}</div> : null}
+
+              <div className="incident-timeline">
+                <div className="incident-timeline-heading"><strong>Event history</strong><span>{detail.events?.length ?? 0} events</span></div>
+                {detail.events?.length ? detail.events.map((event) => (
+                  <div className="incident-event" key={event.id}>
+                    <span className="incident-event-dot" />
+                    <div>
+                      <strong>{event.event_type.replace('_', ' ')}</strong>
+                      <p>{event.message || event.actor}</p>
+                      <small>{formatIncidentDate(event.created_at)} · {event.actor}</small>
+                    </div>
+                  </div>
+                )) : <div className="incident-no-events">No event history recorded yet.</div>}
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
 
 function KnowledgeView() {
   const [documents, setDocuments] = useState<any[]>([])
@@ -753,6 +1088,7 @@ export default function Page() {
   const [telemetryError, setTelemetryError] = useState<string | null>(null);
   const [telemetryLoading, setTelemetryLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [incidentRefresh, setIncidentRefresh] = useState(0);
 
   // 🌟 ۱. استیت‌های جدید برای مدیریت پنل گرافیکی تنظیمات سیستم
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
@@ -833,7 +1169,7 @@ export default function Page() {
           <div><strong>RE<span>VIVE</span></strong><small>AI OBSERVABILITY PLATFORM</small></div>
         </div>
         <div className="top-actions">
-          <span className="system-status"><StatusDot tone={telemetryError ? 'red' : 'green'} /> {telemetryError ? 'SYSTEM DEGRADED' : 'ALL SYSTEMS NOMINAL'}</span>
+          <span className="system-status"><StatusDot tone={telemetryError ? 'red' : 'green'} /> {telemetryError ? 'TELEMETRY DEGRADED' : 'TELEMETRY CONNECTED'}</span>
 
           {/* 🌟 دکمه چرخ‌دنده بالا صفحه اکنون زنده و اکتیو شد */}
           {/* 🌟 اصلاح و زنده کردن دکمه چرخ‌دنده هدر بالا صفحه در page.tsx */}
@@ -873,7 +1209,7 @@ export default function Page() {
           return (
             <button key={tab.id} className={activeTab === tab.id ? 'active' : ''} onClick={() => setActiveTab(tab.id)}>
               <Icon size={15} />{tab.label}
-              <span>{tab.id === 'analytics' ? '01' : tab.id === 'knowledge' ? '02' : '03'}</span>
+              <span>{tab.id === 'analytics' ? '01' : tab.id === 'incidents' ? '02' : tab.id === 'knowledge' ? '03' : '04'}</span>
             </button>
           )
         })}
@@ -882,19 +1218,23 @@ export default function Page() {
       <div className="active-view">
         <div className="view-heading">
           <div>
-            <span className="eyebrow">{activeTab === 'analytics' ? 'REAL-TIME TELEMETRY' : activeTab === 'knowledge' ? 'SEMANTIC RETRIEVAL LAYER' : 'EXTENSIBLE INTELLIGENCE'}</span>
+            <span className="eyebrow">{activeTab === 'analytics' ? 'REAL-TIME TELEMETRY' : activeTab === 'incidents' ? 'INCIDENT RESPONSE & HISTORY' : activeTab === 'knowledge' ? 'SEMANTIC RETRIEVAL LAYER' : 'EXTENSIBLE INTELLIGENCE'}</span>
             <h2><ActiveIcon size={19} />{tabs.find((tab) => tab.id === activeTab)?.label}</h2>
           </div>
           <div className="view-actions">
             <span className="last-updated"><Activity size={13} /> Auto-refresh enabled</span>
-            <button className="refresh-button" onClick={() => fetchTelemetry(true)} disabled={isSyncing}>
-              <Activity size={14} className={isSyncing ? 'animate-spin' : ''} /> {isSyncing ? 'Syncing...' : 'Sync now'}
+            <button className="refresh-button" onClick={activeTab === 'incidents' ? () => setIncidentRefresh((value) => value + 1) : () => fetchTelemetry(true)} disabled={activeTab === 'analytics' && isSyncing}>
+              <Activity size={14} className={isSyncing && activeTab === 'analytics' ? 'animate-spin' : ''} /> {activeTab === 'incidents' ? 'Refresh incidents' : isSyncing ? 'Syncing...' : 'Sync now'}
             </button>
           </div>
         </div>
         {/* 🌟 جایگزین کردن بخش شرطی سه‌تایی تصویر شما با این ساختار تمیز و ۴ کاناله */}
         {activeTab === 'analytics' && (
           <AnalyticsView data={telemetryData} error={telemetryError} loading={telemetryLoading} selectedMetrics={selectedMetrics} setSelectedMetrics={setSelectedMetrics} />
+        )}
+
+        {activeTab === 'incidents' && (
+          <IncidentView refreshToken={incidentRefresh} />
         )}
 
         {activeTab === 'knowledge' && (
