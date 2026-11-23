@@ -1995,3 +1995,31 @@ border-top: 1px solid var(--line)
     color: #6d55cc;
     font-size: 11px;
 }
+
+.incident-remediate-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 11px;
+    border: 1px solid #6d55cc;
+    border-radius: 6px;
+    background: #6d55cc;
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.incident-remediate-button:hover:not(:disabled) { background: #5943ad; }
+.incident-remediate-button:disabled { opacity: .5; cursor: not-allowed; }
+.incident-remediation-result {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 10px 12px;
+    font-size: 11px;
+    color: #334155;
+}
+.incident-remediation-result p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
