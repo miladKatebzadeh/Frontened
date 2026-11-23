@@ -2123,6 +2123,15 @@ border-top: 1px solid var(--line)
 }
 .user-diagnostic-debug dt { font-weight: 700; }
 .user-diagnostic-debug dd { margin: 0; direction: auto; overflow-wrap: anywhere; }
+.user-diagnostic-source-inspection {
+    border-left: 3px solid #38bdf8;
+    padding: 8px 12px;
+    background: rgba(56, 189, 248, 0.07);
+    border-radius: 6px;
+}
+.user-diagnostic-source-inspection p + p {
+    margin-top: 5px;
+}
 .user-diagnostic-pipeline {
     border-left: 3px solid #818cf8;
     padding: 8px 12px;
