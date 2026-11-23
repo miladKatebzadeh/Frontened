@@ -854,6 +854,7 @@ type UserDiagnosticReport = {
     primary_error?: string | null
     failing_stage?: string | null
     failing_command?: string | null
+    evidence_origin?: string | null
   } | null
 }
 type ChatMessage = {
@@ -901,6 +902,9 @@ function DiagnosticReportCard({ report, error, router, traceId }: {
             <p><strong>Stage:</strong> {failure.failing_stage || 'Not identified'}</p>
             <p><strong>Observed issue:</strong> {failure.primary_error || 'Jenkins reported failure, but no specific error message was available.'}</p>
             {failure.failing_command && <p><strong>Associated command:</strong> <code>{failure.failing_command}</code></p>}
+            <p><strong>Evidence source:</strong> {failure.evidence_origin === 'jenkins_exact_build_refetch'
+              ? 'Revive automatically retrieved this specific Jenkins build again.'
+              : 'Jenkins build evidence collected by Revive.'}</p>
           </section>
         )}
         <section>
