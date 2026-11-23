@@ -832,7 +832,103 @@ function KnowledgeView() {
 }
 
 type ChatAction = { triggered: boolean; tool?: string; success?: boolean; resolved?: boolean; message?: string }
-type ChatMessage = { role: 'user' | 'assistant'; text: string; time: string; engineStatus?: string; router?: string; layaModel?: string; action?: ChatAction; requestedRemediation?: boolean }
+type OllamaDiagnosticError = { error_type: string; http_status: number | null; category: string; message: string; model: string; hint: string }
+type UserDiagnosticReport = {
+  language: string
+  status: string
+  title: string
+  incident_confirmed: boolean
+  summary: string
+  root_cause: string
+  evidence: { text: string; source: string; type: string }[]
+  recommended_steps: string[]
+  verification_steps: string[]
+  ai_status: string
+  ai_note: string
+  runbook_count: number
+  action: string
+  recovery_verified: boolean
+  source: string
+}
+type ChatMessage = {
+  role: 'user' | 'assistant'
+  text: string
+  time: string
+  engineStatus?: string
+  router?: string
+  layaModel?: string
+  action?: ChatAction
+  requestedRemediation?: boolean
+  userReport?: UserDiagnosticReport | null
+  ollamaError?: OllamaDiagnosticError | null
+  traceId?: string | null
+}
+
+function DiagnosticReportCard({ report, error, router, traceId }: {
+  report: UserDiagnosticReport
+  error?: OllamaDiagnosticError | null
+  router?: string
+  traceId?: string | null
+}) {
+  const modelUnavailable = report.ai_status !== 'ok'
+  return (
+    <div className={`user-diagnostic-card ${modelUnavailable ? 'user-diagnostic-unavailable' : ''}`} dir="rtl" lang="fa">
+      <div className="user-diagnostic-header">
+        <strong>{report.title}</strong>
+        <span>{modelUnavailable ? 'تحلیل AI در دسترس نیست' : 'گزارش تشخیص'}</span>
+      </div>
+      <div className="user-diagnostic-content">
+        <p className="user-diagnostic-summary">{report.summary}</p>
+        <div className="user-diagnostic-source">
+          {report.incident_confirmed ? 'خرابی توسط سامانه پایش ثبت شده است.' : 'وضعیت خرابی با شواهد مستقل تأیید نشده است.'}
+        </div>
+        <section>
+          <h4>علت مشکل</h4>
+          <p>{report.root_cause}</p>
+        </section>
+        <section>
+          <h4>شواهد ثبت‌شده</h4>
+          {report.evidence.length ? (
+            <ul>{report.evidence.map((evidence, index) => (
+              <li key={index}><span>{evidence.text}</span> <small>({evidence.source})</small></li>
+            ))}</ul>
+          ) : <p>شواهد خطای مستقلی علاوه بر هشدار در دسترس نیست.</p>}
+        </section>
+        <section>
+          <h4>اقدامات پیشنهادی</h4>
+          <ol>{report.recommended_steps.map((step, index) => <li key={index}>{step}</li>)}</ol>
+        </section>
+        <section>
+          <h4>نحوه تأیید رفع مشکل</h4>
+          <ol>{report.verification_steps.map((step, index) => <li key={index}>{step}</li>)}</ol>
+        </section>
+        <div className="user-diagnostic-footer">
+          <p>{report.ai_note}</p>
+          <p><strong>وضعیت عملیات:</strong> {report.action}</p>
+          <p><strong>Runbook بازیابی‌شده:</strong> {report.runbook_count}</p>
+        </div>
+        {error && (
+          <details className="user-diagnostic-debug">
+            <summary>جزئیات فنی خطای Ollama</summary>
+            <dl>
+              <dt>نوع خطا</dt><dd>{error.error_type}</dd>
+              <dt>کد HTTP</dt><dd>{error.http_status ?? 'نامشخص'}</dd>
+              <dt>مدل</dt><dd>{error.model}</dd>
+              <dt>پیام سرویس</dt><dd>{error.message}</dd>
+              <dt>پیشنهاد بررسی</dt><dd>{error.hint}</dd>
+            </dl>
+          </details>
+        )}
+        {(traceId || router) && (
+          <div className="user-diagnostic-metadata" dir="ltr">
+            {router && <span>Router: {router}</span>}
+            {traceId && <span>Trace ID: <code>{traceId}</code></span>}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onNewChat: () => void }) {
   const [tools, setTools] = useState<DynamicTool[]>([])
@@ -931,7 +1027,11 @@ function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onN
     setAiLoading(true)
 
     try {
-      const res = await apiRequest<{ reply: string; engine_status?: string; router?: string; laya_model?: string; incident_id?: number | null; action?: ChatAction }>('/mcp/chat/', {
+      const res = await apiRequest<{
+        reply: string; engine_status?: string; router?: string; laya_model?: string
+        incident_id?: number | null; action?: ChatAction
+        user_report?: UserDiagnosticReport | null; ollama_error?: OllamaDiagnosticError | null; trace_id?: string | null
+      }>('/mcp/chat/', {
         method: 'POST',
         body: JSON.stringify({
           message: clean,
@@ -947,6 +1047,9 @@ function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onN
         router: res.router,
         layaModel: res.laya_model,
         action: res.action,
+        userReport: res.user_report,
+        ollamaError: res.ollama_error,
+        traceId: res.trace_id,
         requestedRemediation: approveRemediation,
         time: new Date().toLocaleTimeString()
       }
@@ -987,7 +1090,7 @@ function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onN
             <button
               type="button"
               className="incident-remediate-button"
-              disabled={aiLoading || messages.length < 3 || messages.some((item) => item.action?.resolved)}
+              disabled={aiLoading || messages.length < 3 || messages[messages.length - 1]?.engineStatus !== 'ok' || messages.some((item) => item.action?.resolved)}
               onClick={() => {
                 if (window.confirm(`Approve the AI agent to attempt remediation of ${incident.resource} using an available MCP tool? This may change infrastructure.`)) {
                   void sendMessage('Attempt a suitable, safe remediation for this incident using the registered MCP tools. Verify the resource state after execution. If no appropriate tool is available, give manual recovery steps and do not claim the incident is resolved.', true)
@@ -1014,7 +1117,24 @@ function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onN
             )
           }
 
-          // لایه آنالیز پاسخ هوش مصنوعی (Assistant)
+          // Always show the structured user-facing report when the API provides it.
+          if (message.userReport && typeof message.userReport.summary === 'string') {
+            return (
+              <div className="chat-message assistant" key={index} style={{ width: '100%', maxWidth: '100%' }}>
+                <div className="message-avatar"><Sparkles size={13} /></div>
+                <div className="message-body" style={{ flex: 1 }}>
+                  <DiagnosticReportCard
+                    report={message.userReport}
+                    error={message.ollamaError}
+                    router={message.router}
+                    traceId={message.traceId}
+                  />
+                </div>
+              </div>
+            )
+          }
+
+          // Legacy API fallback while the new Backend has not been deployed.
           try {
             const report = JSON.parse(message.text || '{}')
             const offline = message.engineStatus === 'offline' || report.engine_status === 'offline'
