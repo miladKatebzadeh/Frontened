@@ -1948,3 +1948,50 @@ border-top: 1px solid var(--line)
     .incident-list-footer { flex-direction: column; }
     .incident-facts { grid-template-columns: 1fr 1fr; }
 }
+
+/* Incident-to-AI handoff and per-Incident diagnostic session */
+.incident-ai-button {
+    border-color: #6d55cc;
+    background: #6d55cc;
+    color: #fff;
+}
+.incident-ai-button:hover:not(:disabled) {
+    background: #5943ad;
+    border-color: #5943ad;
+}
+.incident-chat-context {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 13px 18px;
+    margin: 12px 18px 0;
+    background: #f5f3ff;
+    border: 1px solid #ddd6fe;
+    border-radius: 8px;
+    color: #4c1d95;
+}
+.incident-chat-context > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+.incident-chat-context strong {
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+.incident-chat-context span,
+.incident-chat-context small {
+    font-size: 10px;
+    color: #665c82;
+}
+.chat-thinking {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 18px 0;
+    color: #6d55cc;
+    font-size: 11px;
+}
