@@ -849,6 +849,30 @@ type UserDiagnosticReport = {
   action: string
   recovery_verified: boolean
   source: string
+  source_assessment?: {
+    category?: string
+    diagnostic_status?: string
+    issue?: string
+    primary_error?: string | null
+    evidence_origin?: string
+    root_cause_confirmed?: boolean
+    container_status?: string | null
+    health_status?: string | null
+    oom_killed?: boolean
+    restart_count?: number | null
+    exit_code?: number | null
+    metric?: string
+    status?: string
+    value?: number | null
+    labels?: Record<string, string>
+    time_window?: {
+      status?: string
+      samples?: number
+      first?: number
+      last?: number
+    } | null
+    release_events?: number
+  } | null
   pipeline_failure?: {
     diagnostic_status?: string
     primary_error?: string | null
@@ -879,6 +903,7 @@ function DiagnosticReportCard({ report, error, router, traceId }: {
 }) {
   const modelUnavailable = report.ai_status !== 'ok'
   const failure = report.pipeline_failure
+  const assessment = report.source_assessment
   return (
     <article className={`user-diagnostic-card ${modelUnavailable ? 'user-diagnostic-unavailable' : ''}`} dir="ltr" lang="en">
       <div className="user-diagnostic-header">
@@ -905,6 +930,27 @@ function DiagnosticReportCard({ report, error, router, traceId }: {
             <p><strong>Evidence source:</strong> {failure.evidence_origin === 'jenkins_exact_build_refetch'
               ? 'Revive automatically retrieved this specific Jenkins build again.'
               : 'Jenkins build evidence collected by Revive.'}</p>
+          </section>
+        )}
+        {assessment && (
+          <section className="user-diagnostic-source-inspection">
+            <h4>{assessment.container_status !== undefined ? 'Docker inspection'
+              : assessment.metric ? 'Monitoring analysis' : 'Deployment correlation'}</h4>
+            {assessment.issue && <p>{assessment.issue}</p>}
+            {assessment.primary_error && <p><strong>Observed error:</strong> {assessment.primary_error}</p>}
+            {assessment.container_status && <p><strong>Container state:</strong> {assessment.container_status}</p>}
+            {assessment.health_status && <p><strong>Health check:</strong> {assessment.health_status}</p>}
+            {assessment.oom_killed === true && <p><strong>Confirmed:</strong> Docker recorded an OOMKilled termination.</p>}
+            {assessment.exit_code != null && <p><strong>Exit code:</strong> {assessment.exit_code} (not sufficient to determine the cause alone)</p>}
+            {assessment.metric && <p><strong>Metric:</strong> {assessment.metric}</p>}
+            {assessment.time_window?.status === 'observed' && (
+              <p><strong>Automatically sampled:</strong> {assessment.time_window.samples ?? 0} data points
+                {assessment.time_window.first != null && assessment.time_window.last != null
+                  ? ` (first: ${assessment.time_window.first}, last: ${assessment.time_window.last})`
+                  : ''}</p>
+            )}
+            {assessment.evidence_origin && <p><strong>Evidence origin:</strong> {assessment.evidence_origin.replaceAll('_', ' ')}</p>}
+            {assessment.release_events != null && <p><strong>Deployment records checked:</strong> {assessment.release_events}. Timing alone does not prove causality.</p>}
           </section>
         )}
         <section>
