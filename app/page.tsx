@@ -831,7 +831,8 @@ function KnowledgeView() {
   )
 }
 
-type ChatMessage = { role: 'user' | 'assistant'; text: string; time: string; engineStatus?: string; router?: string; layaModel?: string }
+type ChatAction = { triggered: boolean; tool?: string; success?: boolean; resolved?: boolean; message?: string }
+type ChatMessage = { role: 'user' | 'assistant'; text: string; time: string; engineStatus?: string; router?: string; layaModel?: string; action?: ChatAction }
 
 function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onNewChat: () => void }) {
   const [tools, setTools] = useState<DynamicTool[]>([])
@@ -910,7 +911,7 @@ function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onN
     }
   }
 
-  const sendMessage = async (override?: string) => {
+  const sendMessage = async (override?: string, approveRemediation = false) => {
     const clean = (override ?? query).trim()
     if (!clean || requestInFlight.current) return
     requestInFlight.current = true
@@ -930,11 +931,12 @@ function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onN
     setAiLoading(true)
 
     try {
-      const res = await apiRequest<{ reply: string; engine_status?: string; router?: string; laya_model?: string; incident_id?: number | null }>('/mcp/chat/', {
+      const res = await apiRequest<{ reply: string; engine_status?: string; router?: string; laya_model?: string; incident_id?: number | null; action?: ChatAction }>('/mcp/chat/', {
         method: 'POST',
         body: JSON.stringify({
           message: clean,
           ...(incident ? { incident_id: incident.id } : {}),
+          ...(approveRemediation ? { remediate: true } : {}),
           history
         })
       })
@@ -944,6 +946,7 @@ function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onN
         engineStatus: res.engine_status,
         router: res.router,
         layaModel: res.laya_model,
+        action: res.action,
         time: new Date().toLocaleTimeString()
       }
       messagesRef.current = [...updatedMessages, assistant]
@@ -980,6 +983,18 @@ function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onN
           <div className="incident-chat-context" role="status">
             <div><strong>Incident #{incident.id}: {incident.title}</strong><span>{incident.resource} · {incident.source.toUpperCase()} · {incident.severity.toUpperCase()}</span></div>
             <small>AI investigation · No infrastructure changes without explicit approval</small>
+            <button
+              type="button"
+              className="incident-remediate-button"
+              disabled={aiLoading || messages.length < 3}
+              onClick={() => {
+                if (window.confirm(`Approve the AI agent to attempt remediation of ${incident.resource} using an available MCP tool? This may change infrastructure.`)) {
+                  void sendMessage('Attempt a suitable, safe remediation for this incident using the registered MCP tools. Verify the resource state after execution. If no appropriate tool is available, give manual recovery steps and do not claim the incident is resolved.', true)
+                }
+              }}
+            >
+              <Zap size={13} /> Approve remediation
+            </button>
           </div>
         )}
         <div className="chat-toolbar">
@@ -1050,6 +1065,13 @@ function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onN
                   )}
 
                   {Array.isArray(report.evidence_refs) && report.evidence_refs.length > 0 ? <p className="settings-note">Evidence: {report.evidence_refs.join(', ')}</p> : null}
+                  {message.action?.triggered ? (
+                    <div className="incident-remediation-result" role="status">
+                      <strong>{message.action.resolved ? 'Resolution verified' : message.action.success ? 'Tool executed · resolution not verified' : 'Remediation attempt failed'}</strong>
+                      <span>Tool: {message.action.tool || 'unspecified'}</span>
+                      {message.action.message && <p>{message.action.message}</p>}
+                    </div>
+                  ) : null}
                   {message.router ? <p className="settings-note">Router: {message.router}{message.layaModel ? ` (${message.layaModel})` : ''}</p> : null}
 
                 </div>
