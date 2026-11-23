@@ -849,6 +849,12 @@ type UserDiagnosticReport = {
   action: string
   recovery_verified: boolean
   source: string
+  pipeline_failure?: {
+    diagnostic_status?: string
+    primary_error?: string | null
+    failing_stage?: string | null
+    failing_command?: string | null
+  } | null
 }
 type ChatMessage = {
   role: 'user' | 'assistant'
@@ -871,62 +877,73 @@ function DiagnosticReportCard({ report, error, router, traceId }: {
   traceId?: string | null
 }) {
   const modelUnavailable = report.ai_status !== 'ok'
+  const failure = report.pipeline_failure
   return (
-    <div className={`user-diagnostic-card ${modelUnavailable ? 'user-diagnostic-unavailable' : ''}`} dir="rtl" lang="fa">
+    <article className={`user-diagnostic-card ${modelUnavailable ? 'user-diagnostic-unavailable' : ''}`} dir="ltr" lang="en">
       <div className="user-diagnostic-header">
         <strong>{report.title}</strong>
-        <span>{modelUnavailable ? 'تحلیل AI در دسترس نیست' : 'گزارش تشخیص'}</span>
+        <span>{modelUnavailable ? 'Monitoring-based report · AI unavailable' : 'Incident analysis'}</span>
       </div>
       <div className="user-diagnostic-content">
         <p className="user-diagnostic-summary">{report.summary}</p>
         <div className="user-diagnostic-source">
-          {report.incident_confirmed ? 'خرابی توسط سامانه پایش ثبت شده است.' : 'وضعیت خرابی با شواهد مستقل تأیید نشده است.'}
+          {report.incident_confirmed
+            ? 'Incident confirmed by monitoring. The underlying cause may still require verification.'
+            : 'No independent monitoring confirmation of an incident is available.'}
         </div>
         <section>
-          <h4>علت مشکل</h4>
+          <h4>What went wrong</h4>
           <p>{report.root_cause}</p>
         </section>
+        {failure && (
+          <section className="user-diagnostic-pipeline">
+            <h4>Pipeline failure</h4>
+            <p><strong>Stage:</strong> {failure.failing_stage || 'Not identified'}</p>
+            <p><strong>Observed issue:</strong> {failure.primary_error || 'Jenkins reported failure, but no specific error message was available.'}</p>
+            {failure.failing_command && <p><strong>Associated command:</strong> <code>{failure.failing_command}</code></p>}
+          </section>
+        )}
         <section>
-          <h4>شواهد ثبت‌شده</h4>
+          <h4>Evidence Revive collected</h4>
           {report.evidence.length ? (
             <ul>{report.evidence.map((evidence, index) => (
               <li key={index}><span>{evidence.text}</span> <small>({evidence.source})</small></li>
             ))}</ul>
-          ) : <p>شواهد خطای مستقلی علاوه بر هشدار در دسترس نیست.</p>}
+          ) : <p>No independent error evidence beyond the alert was available.</p>}
         </section>
         <section>
-          <h4>اقدامات پیشنهادی</h4>
+          <h4>Recommended resolution</h4>
           <ol>{report.recommended_steps.map((step, index) => <li key={index}>{step}</li>)}</ol>
         </section>
         <section>
-          <h4>نحوه تأیید رفع مشکل</h4>
+          <h4>How to verify recovery</h4>
           <ol>{report.verification_steps.map((step, index) => <li key={index}>{step}</li>)}</ol>
         </section>
         <div className="user-diagnostic-footer">
           <p>{report.ai_note}</p>
-          <p><strong>وضعیت عملیات:</strong> {report.action}</p>
-          <p><strong>Runbook بازیابی‌شده:</strong> {report.runbook_count}</p>
+          <p><strong>Action status:</strong> {report.action}</p>
+          <p><strong>Matching runbooks:</strong> {report.runbook_count}</p>
         </div>
         {error && (
           <details className="user-diagnostic-debug">
-            <summary>جزئیات فنی خطای Ollama</summary>
+            <summary>Technical details (Ollama)</summary>
             <dl>
-              <dt>نوع خطا</dt><dd>{error.error_type}</dd>
-              <dt>کد HTTP</dt><dd>{error.http_status ?? 'نامشخص'}</dd>
-              <dt>مدل</dt><dd>{error.model}</dd>
-              <dt>پیام سرویس</dt><dd>{error.message}</dd>
-              <dt>پیشنهاد بررسی</dt><dd>{error.hint}</dd>
+              <dt>Error type</dt><dd>{error.error_type}</dd>
+              <dt>HTTP status</dt><dd>{error.http_status ?? 'Unknown'}</dd>
+              <dt>Model</dt><dd>{error.model}</dd>
+              <dt>Provider message</dt><dd>{error.message}</dd>
+              <dt>Service guidance</dt><dd>{error.hint}</dd>
             </dl>
           </details>
         )}
         {(traceId || router) && (
-          <div className="user-diagnostic-metadata" dir="ltr">
+          <div className="user-diagnostic-metadata">
             {router && <span>Router: {router}</span>}
             {traceId && <span>Trace ID: <code>{traceId}</code></span>}
           </div>
         )}
       </div>
-    </div>
+    </article>
   )
 }
 
