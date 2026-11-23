@@ -1093,7 +1093,7 @@ function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onN
         <div className="ask-bar">
           <Search size={16} />
           <input aria-label="Ask Revive" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) sendMessage() }} placeholder="Ask about your infrastructure..." />
-          <button onClick={sendMessage} aria-label="Send message" disabled={aiLoading}><ArrowUpRight size={16} /></button>
+          <button onClick={() => void sendMessage()} aria-label="Send message" disabled={aiLoading}><ArrowUpRight size={16} /></button>
         </div>
         <div className="console-footer"><span><CheckCircle2 size={13} /> Responses are grounded in connected sources</span><span>Enter to send · Shift+Enter for newline</span></div>
       </section>
