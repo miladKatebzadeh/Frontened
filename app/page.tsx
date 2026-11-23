@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000/api').replace(/\/$/, '')
 
@@ -269,7 +269,7 @@ function formatIncidentDate(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-function IncidentView({ refreshToken }: { refreshToken: number }) {
+function IncidentView({ refreshToken, onResolveWithAI }: { refreshToken: number; onResolveWithAI: (incident: IncidentRecord) => void }) {
   const [incidents, setIncidents] = useState<IncidentRecord[]>([]);
   const [summary, setSummary] = useState<IncidentSummary>({
     open: 0, acknowledged: 0, investigating: 0, resolved: 0, critical: 0,
@@ -518,6 +518,11 @@ function IncidentView({ refreshToken }: { refreshToken: number }) {
               </dl>
 
               <div className="incident-actions">
+                {detail.status !== 'resolved' && (
+                  <button type="button" className="incident-action-button primary incident-ai-button" disabled={actionBusy || detailLoading} onClick={() => onResolveWithAI(detail)}>
+                    <Sparkles size={14} /> Resolve with AI
+                  </button>
+                )}
                 {detail.status === 'open' && (
                   <button type="button" className="incident-action-button" disabled={actionBusy} onClick={() => updateIncidentStatus('acknowledged')}>
                     <CheckCircle2 size={14} /> Acknowledge
@@ -826,13 +831,19 @@ function KnowledgeView() {
   )
 }
 
-function LabView() {
+type ChatMessage = { role: 'user' | 'assistant'; text: string; time: string; engineStatus?: string; router?: string; layaModel?: string }
+
+function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onNewChat: () => void }) {
   const [tools, setTools] = useState<DynamicTool[]>([])
   const [toolName, setToolName] = useState('restart_container')
   const [description, setDescription] = useState('Safely restart a named Docker container')
   const [code, setCode] = useState(codeSample)
   const [query, setQuery] = useState('')
-  const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; text: string; time: string; engineStatus?: string; router?: string; layaModel?: string }[]>([{ role: 'assistant', text: 'Ask about a container, build, or metric. I will read the stored telemetry and any indexed runbooks. Saving a tool does not run it until you press the tool or turn on automatic remediation.', time: 'now' }])
+  const initialMessages: ChatMessage[] = [{ role: 'assistant', text: 'Ask about a container, build, or metric. I will read the stored telemetry and any indexed runbooks. Saving a tool does not run it until you press the tool or turn on automatic remediation.', time: 'now' }]
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
+  const messagesRef = useRef<ChatMessage[]>(initialMessages)
+  const requestInFlight = useRef(false)
+  const incidentAutoStarted = useRef(false)
   const [toast, setToast] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
 
@@ -899,45 +910,78 @@ function LabView() {
     }
   }
 
-  const sendMessage = async () => {
-    const clean = query.trim()
-    if (!clean || aiLoading) return
-    const updatedMessages = [
-      ...messages,
-      { role: 'user' as const, text: clean, time: new Date().toLocaleTimeString() }
+  const sendMessage = async (override?: string) => {
+    const clean = (override ?? query).trim()
+    if (!clean || requestInFlight.current) return
+    requestInFlight.current = true
+
+    const previous = messagesRef.current
+    const history = previous
+      .filter((item) => item.text && item.time !== 'now')
+      .slice(-8)
+      .map(({ role, text }) => ({ role, text }))
+    const updatedMessages: ChatMessage[] = [
+      ...previous,
+      { role: 'user', text: clean, time: new Date().toLocaleTimeString() }
     ]
+    messagesRef.current = updatedMessages
     setMessages(updatedMessages)
     setQuery('')
     setAiLoading(true)
-    notify('Revive is parsing cluster metadata infrastructure...')
+
     try {
-      const res = await apiRequest<{ reply: string; engine_status?: string; router?: string; laya_model?: string }>('/mcp/chat/', {
+      const res = await apiRequest<{ reply: string; engine_status?: string; router?: string; laya_model?: string; incident_id?: number | null }>('/mcp/chat/', {
         method: 'POST',
-        body: JSON.stringify({ message: clean })
+        body: JSON.stringify({
+          message: clean,
+          ...(incident ? { incident_id: incident.id } : {}),
+          history
+        })
       })
-      setMessages([
-        ...updatedMessages,
-        { role: 'assistant', text: res.reply, engineStatus: res.engine_status, router: res.router, layaModel: res.laya_model, time: new Date().toLocaleTimeString() }
-      ])
+      const assistant: ChatMessage = {
+        role: 'assistant',
+        text: res.reply,
+        engineStatus: res.engine_status,
+        router: res.router,
+        layaModel: res.laya_model,
+        time: new Date().toLocaleTimeString()
+      }
+      messagesRef.current = [...updatedMessages, assistant]
+      setMessages(messagesRef.current)
     } catch (error) {
-      setMessages([
-        ...updatedMessages,
-        {
-          role: 'assistant',
-          text: '⚠️ Communication Layer Exception: Unable to reach local Ollama host. Verify that you applied the settings cluster environment endpoints correctly.',
-          time: new Date().toLocaleTimeString()
-        }
-      ])
+      const detail = error instanceof Error ? error.message : 'Unable to contact the diagnostic backend.'
+      const failure: ChatMessage = {
+        role: 'assistant',
+        text: `⚠️ Diagnosis request failed: ${detail}`,
+        time: new Date().toLocaleTimeString()
+      }
+      messagesRef.current = [...updatedMessages, failure]
+      setMessages(messagesRef.current)
     } finally {
+      requestInFlight.current = false
       setAiLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (!incident || incidentAutoStarted.current) return
+    incidentAutoStarted.current = true
+    void sendMessage('Diagnose this incident using the linked incident record and matching telemetry. Explain the likely root cause, give a safe step-by-step recovery plan, and list verification checks. Do not execute tools or change infrastructure.')
+    // Trigger exactly once when a new Incident chat mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incident?.id])
 
   return (
     <div className="lab-grid">
       {/* 🌟 بخش چت کاملاً در بالای صفحه و تمام‌عرض */}
       <section className="panel console-panel">
-        <PanelHeader eyebrow="NATURAL LANGUAGE OPS" title="AI Diagnostic Console" icon={MessageSquare} action={<span className="online"><StatusDot /> ONLINE</span>} />
+        <PanelHeader eyebrow="NATURAL LANGUAGE OPS" title="AI Diagnostic Console" icon={MessageSquare} action={<button type="button" className="refresh-button" onClick={onNewChat}><MessageSquare size={14} /> New chat</button>} />
+        {incident && (
+          <div className="incident-chat-context" role="status">
+            <div><strong>Incident #{incident.id}: {incident.title}</strong><span>{incident.resource} · {incident.source.toUpperCase()} · {incident.severity.toUpperCase()}</span></div>
+            <small>AI investigation · No infrastructure changes without explicit approval</small>
+          </div>
+        )}
         <div className="chat-toolbar">
           <div className="bot-avatar"><Sparkles size={20} /></div>
           <div><strong>Revive</strong><span>Context: telemetry + ChromaDB + MCP runtime</span></div>
@@ -995,11 +1039,11 @@ function LabView() {
                       </div>
                     </div>
                   ) : (
-                    <div className="report-box" style={{ margin: '0 0 12px', minHeight: 'auto', background: '#f0fdf4', borderColor: '#bbf7d0' }}>
-                      <div className="report-header" style={{ color: '#166534', borderBottom: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span>INFRASTRUCTURE TELEMETRY STATUS NOMINAL</span>
+                    <div className="report-box" style={{ margin: '0 0 12px', minHeight: 'auto', background: incident ? '#fff7ed' : '#f0fdf4', borderColor: incident ? '#fdba74' : '#bbf7d0' }}>
+                      <div className="report-header" style={{ color: incident ? '#9a3412' : '#166534', borderBottom: incident ? '1px solid #fdba74' : '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>{incident ? 'RECORDED INCIDENT · AI DID NOT CONFIRM' : 'INFRASTRUCTURE TELEMETRY STATUS NOMINAL'}</span>
                       </div>
-                      <div className="report-content" style={{ color: '#14532d', padding: '14px' }}>
+                      <div className="report-content" style={{ color: incident ? '#7c2d12' : '#14532d', padding: '14px' }}>
                         <p style={{ margin: 0 }}>{report.diagnostic_report}</p>
                       </div>
                     </div>
@@ -1023,6 +1067,7 @@ function LabView() {
         })}
 
 
+        {aiLoading && <div className="chat-thinking" role="status"><Sparkles size={14} /> AI is analyzing incident evidence and runbooks…</div>}
         <div className="ask-bar">
           <Search size={16} />
           <input aria-label="Ask Revive" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) sendMessage() }} placeholder="Ask about your infrastructure..." />
@@ -1089,6 +1134,24 @@ export default function Page() {
   const [telemetryLoading, setTelemetryLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [incidentRefresh, setIncidentRefresh] = useState(0);
+  const [chatSessionId, setChatSessionId] = useState(0);
+  const [incidentForChat, setIncidentForChat] = useState<IncidentRecord | null>(null);
+  const [labMounted, setLabMounted] = useState(false);
+
+  const resolveIncidentWithAI = (incident: IncidentRecord) => {
+    setIncidentForChat(incident);
+    setChatSessionId((current) => current + 1);
+    setLabMounted(true);
+    setActiveTab('lab');
+  };
+  const openNewChat = () => {
+    setIncidentForChat(null);
+    setChatSessionId((current) => current + 1);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'lab') setLabMounted(true);
+  }, [activeTab]);
 
   // 🌟 ۱. استیت‌های جدید برای مدیریت پنل گرافیکی تنظیمات سیستم
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
@@ -1234,15 +1297,17 @@ export default function Page() {
         )}
 
         {activeTab === 'incidents' && (
-          <IncidentView refreshToken={incidentRefresh} />
+          <IncidentView refreshToken={incidentRefresh} onResolveWithAI={resolveIncidentWithAI} />
         )}
 
         {activeTab === 'knowledge' && (
           <KnowledgeView />
         )}
 
-        {activeTab === 'lab' && (
-          <LabView />
+        {(activeTab === 'lab' || labMounted) && (
+          <div style={{ display: activeTab === 'lab' ? 'block' : 'none' }}>
+            <LabView key={chatSessionId} incident={incidentForChat} onNewChat={openNewChat} />
+          </div>
         )}
 
         {activeTab === 'settings' && (
