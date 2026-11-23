@@ -832,7 +832,7 @@ function KnowledgeView() {
 }
 
 type ChatAction = { triggered: boolean; tool?: string; success?: boolean; resolved?: boolean; message?: string }
-type ChatMessage = { role: 'user' | 'assistant'; text: string; time: string; engineStatus?: string; router?: string; layaModel?: string; action?: ChatAction }
+type ChatMessage = { role: 'user' | 'assistant'; text: string; time: string; engineStatus?: string; router?: string; layaModel?: string; action?: ChatAction; requestedRemediation?: boolean }
 
 function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onNewChat: () => void }) {
   const [tools, setTools] = useState<DynamicTool[]>([])
@@ -947,6 +947,7 @@ function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onN
         router: res.router,
         layaModel: res.laya_model,
         action: res.action,
+        requestedRemediation: approveRemediation,
         time: new Date().toLocaleTimeString()
       }
       messagesRef.current = [...updatedMessages, assistant]
@@ -986,7 +987,7 @@ function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onN
             <button
               type="button"
               className="incident-remediate-button"
-              disabled={aiLoading || messages.length < 3}
+              disabled={aiLoading || messages.length < 3 || messages.some((item) => item.action?.resolved)}
               onClick={() => {
                 if (window.confirm(`Approve the AI agent to attempt remediation of ${incident.resource} using an available MCP tool? This may change infrastructure.`)) {
                   void sendMessage('Attempt a suitable, safe remediation for this incident using the registered MCP tools. Verify the resource state after execution. If no appropriate tool is available, give manual recovery steps and do not claim the incident is resolved.', true)
@@ -1065,11 +1066,11 @@ function LabView({ incident, onNewChat }: { incident: IncidentRecord | null; onN
                   )}
 
                   {Array.isArray(report.evidence_refs) && report.evidence_refs.length > 0 ? <p className="settings-note">Evidence: {report.evidence_refs.join(', ')}</p> : null}
-                  {message.action?.triggered ? (
+                  {(message.requestedRemediation || message.action?.triggered) ? (
                     <div className="incident-remediation-result" role="status">
-                      <strong>{message.action.resolved ? 'Resolution verified' : message.action.success ? 'Tool executed · resolution not verified' : 'Remediation attempt failed'}</strong>
-                      <span>Tool: {message.action.tool || 'unspecified'}</span>
-                      {message.action.message && <p>{message.action.message}</p>}
+                      <strong>{message.action?.resolved ? 'Resolution verified' : message.action?.triggered ? message.action.success ? 'Tool executed · resolution not verified' : 'Remediation attempt failed' : 'No remediation tool executed'}</strong>
+                      {message.action?.triggered && <span>Tool: {message.action.tool || 'unspecified'}</span>}
+                      <p>{message.action?.message || (message.action?.triggered ? 'Check the resource state and follow the diagnostic guidance.' : 'The AI did not select an executable tool for this request. Use the proposed manual recovery steps.')}</p>
                     </div>
                   ) : null}
                   {message.router ? <p className="settings-note">Router: {message.router}{message.layaModel ? ` (${message.layaModel})` : ''}</p> : null}
