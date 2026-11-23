@@ -2033,7 +2033,7 @@ border-top: 1px solid var(--line)
     background: #f8faff;
     color: #1e293b;
     overflow: hidden;
-    text-align: right;
+    text-align: left;
 }
 .user-diagnostic-unavailable {
     border-color: #fbc68d;
@@ -2083,7 +2083,7 @@ border-top: 1px solid var(--line)
 .user-diagnostic-content ol,
 .user-diagnostic-content ul {
     margin: 0;
-    padding: 0 20px 0 0;
+    padding: 0 0 0 22px;
     list-style-position: outside;
 }
 .user-diagnostic-content li { margin: 5px 0; }
@@ -2119,10 +2119,20 @@ border-top: 1px solid var(--line)
     display: grid;
     grid-template-columns: minmax(85px, 25%) minmax(0, 1fr);
     gap: 6px 10px;
-    direction: rtl;
+    direction: ltr;
 }
 .user-diagnostic-debug dt { font-weight: 700; }
 .user-diagnostic-debug dd { margin: 0; direction: auto; overflow-wrap: anywhere; }
+.user-diagnostic-pipeline {
+    border-left: 3px solid #818cf8;
+    padding: 8px 12px;
+    background: rgba(99, 102, 241, 0.04);
+    border-radius: 6px;
+}
+.user-diagnostic-pipeline code {
+    font-size: 11px;
+    overflow-wrap: anywhere;
+}
 .user-diagnostic-metadata {
     border-top: 1px solid #e2e8f0;
     padding-top: 7px;
